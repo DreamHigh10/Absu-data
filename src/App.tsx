@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Database, LayoutDashboard, Users, Rss, MessageSquare, Settings, Search, Download, CheckCircle, Clock, Check, ChevronRight, LogIn, UserPlus, Upload, Volume2, VolumeX, Image as ImageIcon } from 'lucide-react';
 import { auth, db } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
-import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 export default function App() {
@@ -17,6 +17,7 @@ export default function App() {
   const [newsList, setNewsList] = useState<any[]>([]);
   const [newsTitle, setNewsTitle] = useState('');
   const [newsContent, setNewsContent] = useState('');
+  const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
   
   const [settingsSaved, setSettingsSaved] = useState(false);
   
@@ -83,7 +84,7 @@ export default function App() {
     }
   }, [activeView, isAudioMuted]);
 
-  const isAdmin = user?.email?.toLowerCase() === 'brossj50@gmail.com' || user?.email?.toLowerCase() === 'ogungbadekehinde19@gmail.com' || staffList.some(s => s.email === user?.email && s.role === 'admin');
+  const isAdmin = user?.email?.toLowerCase() === 'brossj50@gmail.com' || staffList.some(s => s.email === user?.email && s.role === 'admin');
 
   const handleLogin = async () => {
     try {
@@ -112,14 +113,46 @@ export default function App() {
   const handleAddNews = async () => {
     if (!newsTitle.trim() || !newsContent.trim() || !user) return;
     try {
-      await addDoc(collection(db, 'news'), {
-        title: newsTitle,
-        content: newsContent,
-        author: user.displayName || user.email,
-        createdAt: serverTimestamp()
-      });
+      if (editingNewsId) {
+        await updateDoc(doc(db, 'news', editingNewsId), {
+          title: newsTitle,
+          content: newsContent
+        });
+        setEditingNewsId(null);
+      } else {
+        await addDoc(collection(db, 'news'), {
+          title: newsTitle,
+          content: newsContent,
+          author: user.displayName || user.email,
+          createdAt: serverTimestamp()
+        });
+      }
       setNewsTitle('');
       setNewsContent('');
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteNews = async (newsId: string) => {
+    if (!window.confirm("Are you sure you want to delete this news post?")) return;
+    try {
+      await deleteDoc(doc(db, 'news', newsId));
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
+  const handleEditNews = (news: any) => {
+    setNewsTitle(news.title);
+    setNewsContent(news.content);
+    setEditingNewsId(news.id);
+  };
+
+  const handleDeleteMessage = async (msgId: string) => {
+    if (!window.confirm("Are you sure you want to delete this message?")) return;
+    try {
+      await deleteDoc(doc(db, 'messages', msgId));
     } catch(err) {
       console.error(err);
     }
@@ -213,6 +246,12 @@ export default function App() {
     setSettingsSaved(true);
     setTimeout(() => setSettingsSaved(false), 3000);
   };
+
+  const departmentCounts = staffList.reduce((acc, curr) => {
+    const dept = curr.department || 'Unspecified';
+    acc[dept] = (acc[dept] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   const facultyCounts = staffList.reduce((acc, curr) => {
     const fac = curr.faculty || 'Unspecified';
@@ -323,9 +362,11 @@ export default function App() {
               <input type="text" placeholder="Search records..." className="pl-8 pr-4 py-1.5 bg-slate-100 border-none rounded-md text-xs w-64 focus:ring-2 focus:ring-blue-500 outline-none" />
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
             </div>
-            <button className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-1.5 px-4 rounded shadow-sm transition-colors flex items-center gap-1.5">
-              <Download className="w-3.5 h-3.5" /> Export Report
-            </button>
+            {isAdmin && (
+              <button className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-1.5 px-4 rounded shadow-sm transition-colors flex items-center gap-1.5">
+                <Download className="w-3.5 h-3.5" /> Export Report
+              </button>
+            )}
           </div>
         </header>
 
@@ -356,7 +397,7 @@ export default function App() {
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Departments</div>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-black text-slate-900">14</span>
+                  <span className="text-2xl font-black text-slate-900">{Object.keys(departmentCounts).length}</span>
                   <span className="text-slate-400 text-xs">Active units</span>
                 </div>
                 <div className="mt-3 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
@@ -551,7 +592,12 @@ export default function App() {
                           const isMe = msg.senderEmail === user?.email;
                           return (
                             <div key={msg.id} className={`max-w-[80%] flex flex-col gap-1 ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
-                              <span className="text-[9px] text-slate-400 font-bold">{msg.senderName}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[9px] text-slate-400 font-bold">{msg.senderName}</span>
+                                {isAdmin && (
+                                  <button onClick={() => handleDeleteMessage(msg.id)} className="text-[9px] text-red-500 hover:text-red-700">Delete</button>
+                                )}
+                              </div>
                               <div className={`px-3 py-2 rounded-lg text-xs text-slate-800 ${isMe ? 'bg-blue-100 text-blue-900' : 'bg-slate-100'}`}>
                                 {msg.text}
                               </div>
@@ -818,7 +864,7 @@ export default function App() {
                             disabled={!newsTitle.trim() || !newsContent.trim()}
                             className="bg-white text-slate-900 px-6 py-2.5 rounded-full text-xs font-bold hover:bg-indigo-50 disabled:opacity-50 shadow-lg shadow-white/10 transition-all tracking-wide"
                           >
-                            Publish Globally
+                            {editingNewsId ? 'Update Globally' : 'Publish Globally'}
                           </button>
                         </div>
                       </div>
@@ -831,11 +877,19 @@ export default function App() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {newsList.map(news => (
                         <div key={news.id} className="bg-white/5 hover:bg-white/10 backdrop-blur-md border border-white/10 hover:border-white/20 rounded-2xl p-6 transition-all shadow-xl group">
-                             <div className="flex items-center gap-3 mb-4">
-                                 <span className="px-2.5 py-1 rounded bg-indigo-500/20 text-indigo-200 text-[10px] font-bold tracking-widest uppercase border border-indigo-500/30">Dispatch</span>
-                                 <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">
-                                   {news.createdAt?.toDate ? news.createdAt.toDate().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : 'Just now'}
-                                 </span>
+                             <div className="flex items-center justify-between mb-4">
+                               <div className="flex items-center gap-3">
+                                   <span className="px-2.5 py-1 rounded bg-indigo-500/20 text-indigo-200 text-[10px] font-bold tracking-widest uppercase border border-indigo-500/30">Dispatch</span>
+                                   <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">
+                                     {news.createdAt?.toDate ? news.createdAt.toDate().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : 'Just now'}
+                                   </span>
+                               </div>
+                               {isAdmin && (
+                                 <div className="flex gap-2">
+                                   <button onClick={() => handleEditNews(news)} className="text-[10px] text-indigo-300 hover:text-white uppercase tracking-wider font-bold">Edit</button>
+                                   <button onClick={() => handleDeleteNews(news.id)} className="text-[10px] text-red-400 hover:text-red-300 uppercase tracking-wider font-bold">Delete</button>
+                                 </div>
+                               )}
                              </div>
                              <h3 className="text-xl font-serif text-white mb-3 leading-snug group-hover:text-indigo-200 transition-colors">{news.title}</h3>
                              <p className="text-sm text-white/70 whitespace-pre-wrap leading-relaxed font-light">{news.content}</p>
