@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Database, LayoutDashboard, Users, Rss, MessageSquare, Settings, Search, Download, CheckCircle, Clock, Check, ChevronRight, LogIn, UserPlus, Upload, Volume2, VolumeX, Image as ImageIcon } from 'lucide-react';
 import { auth, db } from './firebase';
-import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
-import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { onAuthStateChanged, User, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [loading, setLoading] = useState(true);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [activeView, setActiveView] = useState('dashboard');
@@ -20,6 +21,14 @@ export default function App() {
   const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
   
   const [settingsSaved, setSettingsSaved] = useState(false);
+  
+  // Auth states
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
+  const [authError, setAuthError] = useState('');
   
   // Registration / Entry form states
   const [entryName, setEntryName] = useState('');
@@ -47,7 +56,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user && !isGuest) return;
     const qStaff = query(collection(db, 'staff'), orderBy('createdAt', 'desc'));
     const unsubscribeStaff = onSnapshot(qStaff, (snapshot) => {
       const staff = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -86,12 +95,27 @@ export default function App() {
 
   const isAdmin = user?.email?.toLowerCase() === 'brossj50@gmail.com' || staffList.some(s => s.email === user?.email && s.role === 'admin');
 
-  const handleLogin = async () => {
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Login failed", error);
+      if (authMode === 'signup') {
+        const userCredential = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+        await updateProfile(userCredential.user, { displayName: authName });
+        
+        // Save additional user data to firestore
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          name: authName,
+          phone: authPhone,
+          email: authEmail,
+          createdAt: serverTimestamp()
+        });
+      } else {
+        await signInWithEmailAndPassword(auth, authEmail, authPassword);
+      }
+    } catch (error: any) {
+      console.error("Auth failed", error);
+      setAuthError(error.message || 'Authentication failed');
     }
   };
 
@@ -184,7 +208,7 @@ export default function App() {
         staffType: entryStaffType,
         photoUrl: entryPhoto,
         cvUrl: entryCv,
-        email: isAdmin ? '' : user?.email,
+        email: isAdmin ? '' : (user?.email || ''),
         status: isAdmin ? 'Approved' : 'Submitted',
         createdAt: serverTimestamp(),
       });
@@ -265,21 +289,82 @@ export default function App() {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50">Loading...</div>;
   }
 
-  if (!user) {
+  if (!user && !isGuest) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50" style={{ backgroundColor: '#f8fafc' }}>
-        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 text-center max-w-sm w-full">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full overflow-hidden shadow-sm border border-slate-100 flex items-center justify-center bg-slate-50">
-             <img src="/Absu.jpg" alt="ABSU Logo" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=ABSU&background=0D8ABC&color=fff'; }} />
+        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 w-full max-w-sm">
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full overflow-hidden shadow-sm border border-slate-100 flex items-center justify-center bg-slate-50">
+               <img src="/Absu.jpg" alt="ABSU Logo" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=ABSU&background=0D8ABC&color=fff'; }} />
+            </div>
+            <h1 className="text-xl font-bold text-slate-800 mb-2">ABSU STAFF DATABASE</h1>
+            <p className="text-xs text-slate-500">
+              {authMode === 'signin' ? 'Sign in to access the staff portal.' : 'Register for an account.'}
+            </p>
           </div>
-          <h1 className="text-xl font-bold text-slate-800 mb-2">ABSU STAFF DATABASE</h1>
-          <p className="text-xs text-slate-500 mb-6">Sign in to access the staff portal.</p>
-          <button 
-            onClick={handleLogin}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow-sm transition-colors flex items-center justify-center gap-2 text-sm"
-          >
-            <LogIn className="w-4 h-4" /> Sign In with Google
-          </button>
+          
+          {authError && <div className="mb-4 p-2 bg-red-50 text-red-600 text-xs rounded border border-red-100">{authError}</div>}
+          
+          <form onSubmit={handleAuth} className="flex flex-col gap-3">
+            {authMode === 'signup' && (
+              <>
+                <input 
+                  type="text" 
+                  placeholder="Full Name" 
+                  required 
+                  value={authName}
+                  onChange={(e) => setAuthName(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input 
+                  type="tel" 
+                  placeholder="Phone Number" 
+                  required 
+                  value={authPhone}
+                  onChange={(e) => setAuthPhone(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </>
+            )}
+            <input 
+              type="email" 
+              placeholder="Email Address" 
+              required 
+              value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input 
+              type="password" 
+              placeholder="Password" 
+              required 
+              value={authPassword}
+              onChange={(e) => setAuthPassword(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button 
+              type="submit"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow-sm transition-colors flex items-center justify-center gap-2 text-sm mt-2"
+            >
+              {authMode === 'signin' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+              {authMode === 'signin' ? 'Sign In' : 'Sign Up'}
+            </button>
+          </form>
+          
+          <div className="mt-4 text-center flex flex-col gap-2">
+            <button 
+              onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthError(''); }}
+              className="text-xs text-blue-600 hover:underline"
+            >
+              {authMode === 'signin' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
+            </button>
+            <button 
+              onClick={() => setIsGuest(true)}
+              className="text-xs text-slate-500 hover:text-slate-700 hover:underline"
+            >
+              Continue as Guest
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -335,13 +420,23 @@ export default function App() {
           </button>
         </div>
         <div className="p-4 mt-auto border-t border-slate-800 bg-slate-950">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => signOut(auth)}>
-            <div className="w-8 h-8 rounded-full bg-slate-700 overflow-hidden border border-slate-600">
-              <img src={user.photoURL || ''} alt="User" className="w-full h-full object-cover" />
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => {
+            if (user) {
+              signOut(auth);
+            } else {
+              setIsGuest(false);
+            }
+          }}>
+            <div className="w-8 h-8 rounded-full bg-slate-700 overflow-hidden border border-slate-600 flex items-center justify-center">
+              {user?.photoURL ? (
+                <img src={user.photoURL} alt="User" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-white text-xs font-bold">{user?.displayName?.charAt(0) || 'G'}</span>
+              )}
             </div>
             <div className="flex-1 overflow-hidden">
-              <div className="text-xs font-medium text-white truncate">{user.displayName || 'Administrator'}</div>
-              <div className="text-[10px] text-slate-500 truncate">{user.email}</div>
+              <div className="text-xs font-medium text-white truncate">{user?.displayName || (user ? 'User' : 'Guest')}</div>
+              <div className="text-[10px] text-slate-500 truncate">{user?.email || 'Not signed in'}</div>
             </div>
           </div>
         </div>
@@ -605,17 +700,23 @@ export default function App() {
                           );
                         })}
                      </div>
-                     <div className="p-3 border-t border-slate-200 flex gap-2">
-                         <input 
-                           type="text" 
-                           placeholder="Type a message..." 
-                           className="flex-1 px-3 py-1.5 bg-slate-100 rounded-md text-xs border-none outline-none focus:ring-1 focus:ring-blue-500" 
-                           value={newMessage}
-                           onChange={(e) => setNewMessage(e.target.value)}
-                           onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                         />
-                         <button onClick={handleSendMessage} className="bg-blue-600 text-white px-4 py-1.5 rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50" disabled={!newMessage.trim()}>Send</button>
-                     </div>
+                     {user ? (
+                       <div className="p-3 border-t border-slate-200 flex gap-2">
+                           <input 
+                             type="text" 
+                             placeholder="Type a message..." 
+                             className="flex-1 px-3 py-1.5 bg-slate-100 rounded-md text-xs border-none outline-none focus:ring-1 focus:ring-blue-500" 
+                             value={newMessage}
+                             onChange={(e) => setNewMessage(e.target.value)}
+                             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                           />
+                           <button onClick={handleSendMessage} className="bg-blue-600 text-white px-4 py-1.5 rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50" disabled={!newMessage.trim()}>Send</button>
+                       </div>
+                     ) : (
+                       <div className="p-3 border-t border-slate-200 text-center text-xs text-slate-500">
+                         Please sign in to participate in the chat.
+                       </div>
+                     )}
                   </div>
               </div>
           </div>
