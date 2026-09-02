@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Database, LayoutDashboard, Users, Rss, MessageSquare, Settings, Search, Download, CheckCircle, Clock, Check, ChevronRight, LogIn, UserPlus, Upload, Volume2, VolumeX, Image as ImageIcon } from 'lucide-react';
 import { auth, db } from './firebase';
-import { onAuthStateChanged, User, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
@@ -119,13 +120,29 @@ export default function App() {
     }
   };
 
+  const handleGoogleAuth = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const userCredential = await signInWithPopup(auth, provider);
+      // Ensure user document exists if they are signing up via Google
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        name: userCredential.user.displayName || 'Google User',
+        email: userCredential.user.email,
+        createdAt: serverTimestamp()
+      }, { merge: true });
+    } catch (error: any) {
+      console.error("Google Auth failed", error);
+      setAuthError(error.message || 'Google Authentication failed');
+    }
+  };
+
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !user) return;
+    if (!newMessage.trim() || (!user && !isGuest)) return;
     try {
       await addDoc(collection(db, 'messages'), {
         text: newMessage,
-        senderEmail: user.email,
-        senderName: user.displayName || 'User',
+        senderEmail: user?.email || 'guest@absu.edu',
+        senderName: user?.displayName || 'Guest User',
         createdAt: serverTimestamp()
       });
       setNewMessage('');
@@ -135,7 +152,7 @@ export default function App() {
   };
 
   const handleAddNews = async () => {
-    if (!newsTitle.trim() || !newsContent.trim() || !user) return;
+    if (!newsTitle.trim() || !newsContent.trim() || (!user && !isGuest)) return;
     try {
       if (editingNewsId) {
         await updateDoc(doc(db, 'news', editingNewsId), {
@@ -147,7 +164,7 @@ export default function App() {
         await addDoc(collection(db, 'news'), {
           title: newsTitle,
           content: newsContent,
-          author: user.displayName || user.email,
+          author: user?.displayName || user?.email || 'Guest User',
           createdAt: serverTimestamp()
         });
       }
@@ -286,15 +303,15 @@ export default function App() {
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#64748b'];
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50">Loading...</div>;
+    return <div className="min-h-screen flex items-center justify-center bg-artistic-mesh p-4">Loading...</div>;
   }
 
   if (!user && !isGuest) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50" style={{ backgroundColor: '#f8fafc' }}>
-        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 w-full max-w-sm">
+      <div className="min-h-screen flex items-center justify-center bg-artistic-mesh p-4">
+        <div className="glass-panel p-8 rounded-[2rem] w-full max-w-sm relative overflow-hidden">
           <div className="text-center mb-6">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full overflow-hidden shadow-sm border border-slate-100 flex items-center justify-center bg-slate-50">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-[2rem] overflow-hidden shadow-2xl border border-white/60 flex items-center justify-center bg-white/50 backdrop-blur-md">
                <img src="/Absu.jpg" alt="ABSU Logo" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=ABSU&background=0D8ABC&color=fff'; }} />
             </div>
             <h1 className="text-xl font-bold text-slate-800 mb-2">ABSU STAFF DATABASE</h1>
@@ -314,7 +331,7 @@ export default function App() {
                   required 
                   value={authName}
                   onChange={(e) => setAuthName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                 />
                 <input 
                   type="tel" 
@@ -322,7 +339,7 @@ export default function App() {
                   required 
                   value={authPhone}
                   onChange={(e) => setAuthPhone(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                 />
               </>
             )}
@@ -332,7 +349,7 @@ export default function App() {
               required 
               value={authEmail}
               onChange={(e) => setAuthEmail(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
             />
             <input 
               type="password" 
@@ -340,21 +357,39 @@ export default function App() {
               required 
               value={authPassword}
               onChange={(e) => setAuthPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
             />
             <button 
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow-sm transition-colors flex items-center justify-center gap-2 text-sm mt-2"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 text-sm mt-2"
             >
               {authMode === 'signin' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
               {authMode === 'signin' ? 'Sign In' : 'Sign Up'}
+            </button>
+            <div className="relative flex py-2 items-center">
+                <div className="flex-grow border-t border-slate-200"></div>
+                <span className="flex-shrink-0 mx-4 text-slate-400 text-xs">Or</span>
+                <div className="flex-grow border-t border-slate-200"></div>
+            </div>
+            <button 
+              type="button"
+              onClick={handleGoogleAuth}
+              className="w-full glass-panel hover:bg-white/40 text-slate-700 font-bold py-3 px-4 rounded-xl shadow-[0_4px_12px_rgba(0,0,0,0.05)] border border-white/60 transition-all flex items-center justify-center gap-2 text-sm"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              Continue with Google
             </button>
           </form>
           
           <div className="mt-4 text-center flex flex-col gap-2">
             <button 
               onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthError(''); }}
-              className="text-xs text-blue-600 hover:underline"
+              className="text-xs text-indigo-600 hover:underline"
             >
               {authMode === 'signin' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
             </button>
@@ -371,14 +406,14 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-full font-sans overflow-hidden bg-slate-50" style={{ backgroundColor: '#f8fafc' }}>
+    <div className="flex h-screen w-full font-sans overflow-hidden bg-artistic-mesh">
       <audio ref={audioRef} src="https://www.chosic.com/wp-content/uploads/2020/07/Art-Of-Silence_V2.mp3" loop />
       
       {/* Sidebar */}
-      <nav className="w-56 bg-slate-900 flex flex-col shrink-0 hidden md:flex">
-        <div className="p-5 border-b border-slate-800">
+      <nav className="w-56 bg-gradient-to-b from-indigo-950 to-slate-950 border-r border-indigo-900/30 flex flex-col shrink-0 hidden md:flex">
+        <div className="p-5 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded overflow-hidden shadow bg-white flex shrink-0">
+            <div className="w-12 h-12 rounded-2xl overflow-hidden shadow-lg border border-white/20 bg-white/50 flex shrink-0 backdrop-blur-sm p-1">
                <img src="/Absu.jpg" alt="ABSU Logo" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=ABSU&background=0D8ABC&color=fff'; }} />
             </div>
             <span className="text-white font-bold text-xs tracking-wide leading-tight">ABSU STAFF<br/>DATABASE</span>
@@ -386,13 +421,13 @@ export default function App() {
         </div>
         <div className="flex-1 py-4">
           <div className="px-4 mb-2 text-[10px] uppercase font-bold text-slate-500 tracking-wider">Main Navigation</div>
-          <button onClick={() => setActiveView('dashboard')} className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-colors ${activeView === 'dashboard' ? 'text-blue-400 bg-slate-800/50 border-r-4 border-blue-500' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}>
+          <button onClick={() => setActiveView('dashboard')} className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-all duration-300 ${activeView === 'dashboard' ? 'text-indigo-300 bg-white/10 border-r-4 border-indigo-400 shadow-[inset_4px_0_12px_rgba(255,255,255,0.05)]' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}>
             <LayoutDashboard className="w-4 h-4" /> Dashboard
           </button>
-          <button onClick={() => setActiveView('directory')} className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-colors ${activeView === 'directory' ? 'text-blue-400 bg-slate-800/50 border-r-4 border-blue-500' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}>
+          <button onClick={() => setActiveView('directory')} className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-all duration-300 ${activeView === 'directory' ? 'text-indigo-300 bg-white/10 border-r-4 border-indigo-400 shadow-[inset_4px_0_12px_rgba(255,255,255,0.05)]' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}>
             <Users className="w-4 h-4" /> Staff Directory
           </button>
-          <button onClick={() => setActiveView('entry')} className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-colors ${activeView === 'entry' ? 'text-blue-400 bg-slate-800/50 border-r-4 border-blue-500' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}>
+          <button onClick={() => setActiveView('entry')} className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-all duration-300 ${activeView === 'entry' ? 'text-indigo-300 bg-white/10 border-r-4 border-indigo-400 shadow-[inset_4px_0_12px_rgba(255,255,255,0.05)]' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}>
             <UserPlus className="w-4 h-4" /> {isAdmin ? 'Add Staff' : 'My Details'}
           </button>
           <button 
@@ -406,20 +441,20 @@ export default function App() {
                 });
               }
             }} 
-            className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-colors ${activeView === 'news' ? 'text-blue-400 bg-slate-800/50 border-r-4 border-blue-500' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}
+            className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-all duration-300 ${activeView === 'news' ? 'text-indigo-300 bg-white/10 border-r-4 border-indigo-400 shadow-[inset_4px_0_12px_rgba(255,255,255,0.05)]' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}
           >
             <Rss className="w-4 h-4" /> News Feed
           </button>
-          <button onClick={() => setActiveView('messages')} className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-colors ${activeView === 'messages' ? 'text-blue-400 bg-slate-800/50 border-r-4 border-blue-500' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}>
+          <button onClick={() => setActiveView('messages')} className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-all duration-300 ${activeView === 'messages' ? 'text-indigo-300 bg-white/10 border-r-4 border-indigo-400 shadow-[inset_4px_0_12px_rgba(255,255,255,0.05)]' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}>
             <MessageSquare className="w-4 h-4" /> Messages
             <span className="ml-auto bg-red-500 text-[10px] px-1.5 rounded-full text-white font-bold">4</span>
           </button>
           <div className="px-4 mt-6 mb-2 text-[10px] uppercase font-bold text-slate-500 tracking-wider">System</div>
-          <button onClick={() => setActiveView('settings')} className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-colors ${activeView === 'settings' ? 'text-blue-400 bg-slate-800/50 border-r-4 border-blue-500' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}>
+          <button onClick={() => setActiveView('settings')} className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-all duration-300 ${activeView === 'settings' ? 'text-indigo-300 bg-white/10 border-r-4 border-indigo-400 shadow-[inset_4px_0_12px_rgba(255,255,255,0.05)]' : 'text-slate-400 hover:text-white border-r-4 border-transparent'}`}>
             <Settings className="w-4 h-4" /> Settings
           </button>
         </div>
-        <div className="p-4 mt-auto border-t border-slate-800 bg-slate-950">
+        <div className="p-4 mt-auto border-t border-white/10 bg-slate-900/40 backdrop-blur-md">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => {
             if (user) {
               signOut(auth);
@@ -444,7 +479,7 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0">
+        <header className="h-16 glass-panel border-b border-white/40 px-8 flex items-center justify-between shrink-0 z-20">
           <h1 className="text-lg font-bold text-slate-800">
             {activeView === 'dashboard' && 'Analytics Dashboard'}
             {activeView === 'directory' && 'Staff Directory'}
@@ -454,58 +489,69 @@ export default function App() {
           </h1>
           <div className="flex items-center gap-4">
             <div className="relative">
-              <input type="text" placeholder="Search records..." className="pl-8 pr-4 py-1.5 bg-slate-100 border-none rounded-md text-xs w-64 focus:ring-2 focus:ring-blue-500 outline-none" />
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+              <input type="text" placeholder="Search records..." className="pl-9 pr-4 py-2 bg-white/50 backdrop-blur-sm border border-white/40 rounded-full text-xs w-72 focus:ring-2 focus:ring-indigo-400 focus:bg-white/80 outline-none shadow-inner transition-all" />
+              <Search className="w-4 h-4 absolute left-3 top-2 text-indigo-400" />
             </div>
             {isAdmin && (
-              <button className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-1.5 px-4 rounded shadow-sm transition-colors flex items-center gap-1.5">
+              <button className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white shadow-[0_8px_16px_rgba(147,51,234,0.3)] hover:shadow-[0_12px_24px_rgba(147,51,234,0.4)] hover:-translate-y-0.5 text-white text-xs font-bold py-1.5 px-4 rounded shadow-sm transition-all duration-300 flex items-center gap-1.5">
                 <Download className="w-3.5 h-3.5" /> Export Report
               </button>
             )}
           </div>
         </header>
 
+        <AnimatePresence mode="wait">
+
+
         {activeView === 'dashboard' && (
-          <div className="flex-1 p-6 space-y-6 overflow-auto">
+          <motion.div
+            key="dashboard"
+            initial={{ opacity: 0, y: 15, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -15, filter: 'blur(8px)' }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="flex-1 flex flex-col min-h-0 overflow-hidden"
+          >
+            <div className="flex-1 p-6 space-y-6 overflow-auto">
             {/* Top Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <div className="glass-panel p-6 rounded-3xl">
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Staff (DB)</div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-black text-slate-900">{staffList.length}</span>
                   <span className="text-emerald-500 text-xs font-bold">+Live</span>
                 </div>
-                <div className="mt-3 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 w-[100%]"></div>
+                <div className="mt-3 h-1 w-full bg-white/40 rounded-full overflow-hidden shadow-inner">
+                  <div className="h-full bg-gradient-to-r from-indigo-400 to-purple-400 w-[100%]"></div>
                 </div>
               </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <div className="glass-panel p-6 rounded-3xl">
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Pending Approval</div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-black text-slate-900">{staffList.filter(s => s.status === 'Submitted' || s.status === 'Draft').length}</span>
                   <span className="text-amber-500 text-xs font-bold">Action Req.</span>
                 </div>
-                <div className="mt-3 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div className="mt-3 h-1 w-full bg-white/40 rounded-full overflow-hidden shadow-inner">
                   <div className="h-full bg-amber-500" style={{ width: `${(staffList.filter(s => s.status !== 'Approved').length / Math.max(staffList.length, 1)) * 100}%`}}></div>
                 </div>
               </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <div className="glass-panel p-6 rounded-3xl">
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Departments</div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-black text-slate-900">{Object.keys(departmentCounts).length}</span>
                   <span className="text-slate-400 text-xs">Active units</span>
                 </div>
-                <div className="mt-3 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div className="mt-3 h-1 w-full bg-white/40 rounded-full overflow-hidden shadow-inner">
                   <div className="h-full bg-indigo-500 w-[100%]"></div>
                 </div>
               </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <div className="glass-panel p-6 rounded-3xl">
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Faculties</div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-black text-slate-900">{Object.keys(facultyCounts).length}</span>
-                  <span className="text-blue-500 text-xs font-bold">Recorded</span>
+                  <span className="text-indigo-500 text-xs font-bold">Recorded</span>
                 </div>
-                <div className="mt-3 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div className="mt-3 h-1 w-full bg-white/40 rounded-full overflow-hidden shadow-inner">
                   <div className="h-full bg-purple-500 w-[100%]"></div>
                 </div>
               </div>
@@ -513,7 +559,7 @@ export default function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
               {/* Pie Chart */}
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+              <div className="glass-panel p-6 rounded-[2rem] border border-white/60 shadow-lg flex flex-col transition-transform hover:-translate-y-1 duration-300">
                  <div className="flex items-center justify-between mb-4">
                     <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Staff per Faculty</h3>
                  </div>
@@ -545,14 +591,14 @@ export default function App() {
             </div>
 
             {/* Table */}
-            <div className="col-span-12 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
-              <div className="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center justify-between">
+            <div className="col-span-12 glass-panel rounded-[2rem] overflow-hidden mt-6">
+              <div className="bg-white/40 backdrop-blur-sm border-b border-white/50 px-5 py-3 flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Live Staff Registrations (Firebase)</h3>
-                <button onClick={() => setActiveView('directory')} className="text-[10px] font-bold text-blue-600 hover:underline">View Full Directory</button>
+                <button onClick={() => setActiveView('directory')} className="text-[10px] font-bold text-indigo-600 hover:underline">View Full Directory</button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
-                  <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                  <thead className="bg-white/40 backdrop-blur-sm text-[10px] font-bold text-indigo-900 uppercase border-b border-white/40">
                     <tr>
                       <th className="px-5 py-3 whitespace-nowrap">Staff Member</th>
                       <th className="px-5 py-3 whitespace-nowrap">ID Number</th>
@@ -567,7 +613,7 @@ export default function App() {
                        <tr><td colSpan={6} className="px-5 py-4 text-center text-xs text-slate-500">No live data yet. Staff registered through the mobile app will appear here.</td></tr>
                     ) : (
                       staffList.slice(0, 5).map((staff) => (
-                      <tr key={staff.id} className="text-xs hover:bg-slate-50">
+                      <tr key={staff.id} className="text-xs hover:bg-white/40 transition-colors">
                         <td className="px-5 py-2.5 flex items-center gap-3">
                           <div className={`w-7 h-7 rounded ${staff.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'} flex items-center justify-center font-bold text-[10px]`}>
                             {staff.name.substring(0, 2).toUpperCase()}
@@ -592,7 +638,7 @@ export default function App() {
                           {isAdmin && staff.role !== 'admin' && (
                             <button onClick={() => handleMakeAdmin(staff.id)} className="text-emerald-600 hover:text-emerald-800 font-bold px-2 py-1 mr-2 border border-emerald-200 rounded text-[10px]">Make Admin</button>
                           )}
-                          <button className="text-blue-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
+                          <button className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
                         </td>
                       </tr>
                       ))
@@ -601,18 +647,27 @@ export default function App() {
                 </table>
               </div>
             </div>
-          </div>
+            </div>
+          </motion.div>
         )}
 
         {activeView === 'directory' && (
-          <div className="flex-1 p-6 overflow-auto">
-             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-h-[500px]">
-                <div className="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center justify-between">
+          <motion.div
+            key="directory"
+            initial={{ opacity: 0, y: 15, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -15, filter: 'blur(8px)' }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="flex-1 flex flex-col min-h-0 overflow-hidden"
+          >
+            <div className="flex-1 p-6 overflow-auto">
+             <div className="glass-panel rounded-[2rem] overflow-hidden min-h-[500px]">
+                <div className="bg-white/40 backdrop-blur-sm border-b border-white/50 px-5 py-3 flex items-center justify-between">
                     <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Full Staff Directory</h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                    <thead className="bg-white/40 backdrop-blur-sm text-[10px] font-bold text-indigo-900 uppercase border-b border-white/40">
                       <tr>
                         <th className="px-5 py-3 whitespace-nowrap">Staff Member</th>
                         <th className="px-5 py-3 whitespace-nowrap">ID Number</th>
@@ -627,7 +682,7 @@ export default function App() {
                          <tr><td colSpan={6} className="px-5 py-4 text-center text-xs text-slate-500">No live data yet. Staff registered through the mobile app will appear here.</td></tr>
                       ) : (
                         staffList.map((staff) => (
-                        <tr key={staff.id} className="text-xs hover:bg-slate-50">
+                        <tr key={staff.id} className="text-xs hover:bg-white/40 transition-colors">
                           <td className="px-5 py-2.5 flex items-center gap-3">
                             <div className={`w-7 h-7 rounded ${staff.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'} flex items-center justify-center font-bold text-[10px]`}>
                               {staff.name.substring(0, 2).toUpperCase()}
@@ -652,7 +707,7 @@ export default function App() {
                             {isAdmin && staff.role !== 'admin' && (
                               <button onClick={() => handleMakeAdmin(staff.id)} className="text-emerald-600 hover:text-emerald-800 font-bold px-2 py-1 mr-2 border border-emerald-200 rounded text-[10px]">Make Admin</button>
                             )}
-                            <button className="text-blue-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
+                            <button className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
                           </td>
                         </tr>
                         ))
@@ -661,13 +716,22 @@ export default function App() {
                   </table>
                 </div>
              </div>
-          </div>
+            </div>
+          </motion.div>
         )}
 
         {activeView === 'messages' && (
-          <div className="flex-1 p-6 flex flex-col overflow-hidden h-full">
-              <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm flex overflow-hidden min-h-[400px]">
-                  <div className="w-1/3 border-r border-slate-200 bg-slate-50">
+          <motion.div
+            key="messages"
+            initial={{ opacity: 0, y: 15, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -15, filter: 'blur(8px)' }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="flex-1 flex flex-col min-h-0 overflow-hidden"
+          >
+            <div className="flex-1 p-6 flex flex-col overflow-hidden h-full">
+              <div className="flex-1 glass-panel rounded-[2rem] flex overflow-hidden min-h-[400px]">
+                  <div className="w-1/3 border-r border-white/50 bg-white/30 backdrop-blur-md">
                      <div className="p-4 border-b border-slate-200 font-bold text-xs text-slate-700">Recent Chats</div>
                      <div className="p-3 border-b border-slate-100 flex items-center gap-3 cursor-pointer bg-white">
                         <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">HR</div>
@@ -693,7 +757,7 @@ export default function App() {
                                   <button onClick={() => handleDeleteMessage(msg.id)} className="text-[9px] text-red-500 hover:text-red-700">Delete</button>
                                 )}
                               </div>
-                              <div className={`px-3 py-2 rounded-lg text-xs text-slate-800 ${isMe ? 'bg-blue-100 text-blue-900' : 'bg-slate-100'}`}>
+                              <div className={`px-3 py-2 rounded-lg text-xs text-slate-800 ${isMe ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md' : 'glass-panel text-slate-800 shadow-sm border border-white/50'}`}>
                                 {msg.text}
                               </div>
                             </div>
@@ -705,12 +769,12 @@ export default function App() {
                            <input 
                              type="text" 
                              placeholder="Type a message..." 
-                             className="flex-1 px-3 py-1.5 bg-slate-100 rounded-md text-xs border-none outline-none focus:ring-1 focus:ring-blue-500" 
+                             className="flex-1 px-4 py-2.5 bg-white/50 backdrop-blur-sm rounded-full text-xs border border-white/40 outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white/80 shadow-inner transition-all" 
                              value={newMessage}
                              onChange={(e) => setNewMessage(e.target.value)}
                              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
                            />
-                           <button onClick={handleSendMessage} className="bg-blue-600 text-white px-4 py-1.5 rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50" disabled={!newMessage.trim()}>Send</button>
+                           <button onClick={handleSendMessage} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-5 py-2.5 rounded-full text-xs font-bold hover:from-indigo-600 hover:to-purple-700 hover:shadow-lg disabled:opacity-50 hover:-translate-y-0.5 transition-all" disabled={!newMessage.trim()}>Send</button>
                        </div>
                      ) : (
                        <div className="p-3 border-t border-slate-200 text-center text-xs text-slate-500">
@@ -719,12 +783,21 @@ export default function App() {
                      )}
                   </div>
               </div>
-          </div>
+            </div>
+          </motion.div>
         )}
 
         {activeView === 'settings' && (
-          <div className="flex-1 p-6 overflow-auto">
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm max-w-2xl mx-auto">
+          <motion.div
+            key="settings"
+            initial={{ opacity: 0, y: 15, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -15, filter: 'blur(8px)' }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="flex-1 flex flex-col min-h-0 overflow-hidden"
+          >
+            <div className="flex-1 p-6 overflow-auto">
+              <div className="glass-panel rounded-[2rem] max-w-2xl mx-auto">
                   <div className="p-5 border-b border-slate-200">
                       <h3 className="text-sm font-bold text-slate-800">System Settings</h3>
                       <p className="text-xs text-slate-500">Manage your application preferences and configurations.</p>
@@ -737,22 +810,31 @@ export default function App() {
                       <div>
                          <label className="block text-xs font-bold text-slate-700 mb-1">Admin Email Notifications</label>
                          <div className="flex items-center gap-2 mt-2">
-                             <input type="checkbox" defaultChecked className="rounded border-slate-300 text-blue-600" />
+                             <input type="checkbox" defaultChecked className="rounded border-slate-300 text-indigo-600" />
                              <span className="text-xs text-slate-600">Email me when a new staff member registers</span>
                          </div>
                       </div>
                       <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-end gap-3">
                          {settingsSaved && <span className="text-emerald-600 text-xs font-bold flex items-center gap-1"><Check className="w-4 h-4"/> Saved!</span>}
-                         <button onClick={handleSaveSettings} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded shadow-sm transition-colors">Save Changes</button>
+                         <button onClick={handleSaveSettings} className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white shadow-[0_8px_16px_rgba(147,51,234,0.3)] hover:shadow-[0_12px_24px_rgba(147,51,234,0.4)] hover:-translate-y-0.5 text-white text-xs font-bold py-2 px-4 rounded shadow-sm transition-all duration-300">Save Changes</button>
                       </div>
                   </div>
               </div>
-          </div>
+            </div>
+          </motion.div>
         )}
 
         {activeView === 'entry' && (
-          <div className="flex-1 p-6 overflow-auto">
-             <div className="bg-white rounded-xl border border-slate-200 shadow-sm max-w-2xl mx-auto p-6">
+          <motion.div
+            key="entry"
+            initial={{ opacity: 0, y: 15, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -15, filter: 'blur(8px)' }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="flex-1 flex flex-col min-h-0 overflow-hidden"
+          >
+            <div className="flex-1 p-6 overflow-auto">
+             <div className="glass-panel rounded-[2rem] max-w-2xl mx-auto p-6">
                 <h2 className="text-lg font-bold text-slate-800 mb-6">{isAdmin ? 'Staff Management Entry' : 'Submit My Details'}</h2>
                 
                 {isAdmin ? (
@@ -763,35 +845,35 @@ export default function App() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
                                  <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
-                                 <input type="text" value={entryName} onChange={(e) => setEntryName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. John Doe" />
+                                 <input type="text" value={entryName} onChange={(e) => setEntryName(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. John Doe" />
                               </div>
                               <div>
                                  <label className="block text-xs font-bold text-slate-700 mb-1">Employee ID</label>
-                                 <input type="text" value={entryEmpId} onChange={(e) => setEntryEmpId(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. EMP-2023-001" />
+                                 <input type="text" value={entryEmpId} onChange={(e) => setEntryEmpId(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. EMP-2023-001" />
                               </div>
                               <div>
                                  <label className="block text-xs font-bold text-slate-700 mb-1">Faculty</label>
-                                 <input type="text" value={entryFaculty} onChange={(e) => setEntryFaculty(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. Science" />
+                                 <input type="text" value={entryFaculty} onChange={(e) => setEntryFaculty(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. Science" />
                               </div>
                               <div>
                                  <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
-                                 <input type="text" value={entryDept} onChange={(e) => setEntryDept(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. Operations" />
+                                 <input type="text" value={entryDept} onChange={(e) => setEntryDept(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. Operations" />
                               </div>
                               <div>
                                  <label className="block text-xs font-bold text-slate-700 mb-1">Phone Number</label>
-                                 <input type="text" value={entryPhone} onChange={(e) => setEntryPhone(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. +234 800 000 0000" />
+                                 <input type="text" value={entryPhone} onChange={(e) => setEntryPhone(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. +234 800 000 0000" />
                               </div>
                               <div>
                                  <label className="block text-xs font-bold text-slate-700 mb-1">Date of Birth</label>
-                                 <input type="date" value={entryDob} onChange={(e) => setEntryDob(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" />
+                                 <input type="date" value={entryDob} onChange={(e) => setEntryDob(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" />
                               </div>
                               <div>
                                  <label className="block text-xs font-bold text-slate-700 mb-1">Height (cm)</label>
-                                 <input type="text" value={entryHeight} onChange={(e) => setEntryHeight(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. 175" />
+                                 <input type="text" value={entryHeight} onChange={(e) => setEntryHeight(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. 175" />
                               </div>
                               <div>
                                  <label className="block text-xs font-bold text-slate-700 mb-1">Blood Group</label>
-                                 <select value={entryBloodGroup} onChange={(e) => setEntryBloodGroup(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none">
+                                 <select value={entryBloodGroup} onChange={(e) => setEntryBloodGroup(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none">
                                     <option value="">Select...</option>
                                     <option value="A+">A+</option>
                                     <option value="A-">A-</option>
@@ -813,7 +895,7 @@ export default function App() {
                             </div>
                             <div>
                                <label className="block text-xs font-bold text-slate-700 mb-1">Address</label>
-                               <textarea value={entryAddress} onChange={(e) => setEntryAddress(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none resize-none h-20" placeholder="Full residential address" />
+                               <textarea value={entryAddress} onChange={(e) => setEntryAddress(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none resize-none h-20" placeholder="Full residential address" />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                <div>
@@ -825,7 +907,7 @@ export default function App() {
                                   <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => handleFileUpload(e, setEntryCv)} className="w-full text-xs text-slate-500 file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:bg-slate-100" />
                                </div>
                             </div>
-                            <button onClick={handleManualEntry} disabled={!entryName.trim() || !entryEmpId.trim() || !entryDept.trim() || !entryFaculty.trim()} className="bg-blue-600 text-white px-4 py-2 rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50">Add Staff Member</button>
+                            <button onClick={handleManualEntry} disabled={!entryName.trim() || !entryEmpId.trim() || !entryDept.trim() || !entryFaculty.trim()} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all px-4 py-2 rounded-md text-xs font-bold hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50">Add Staff Member</button>
                          </div>
                       </div>
                       <div>
@@ -845,35 +927,35 @@ export default function App() {
                         </div>
                         <div>
                            <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
-                           <input type="text" value={entryName} onChange={(e) => setEntryName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. Jane Doe" />
+                           <input type="text" value={entryName} onChange={(e) => setEntryName(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. Jane Doe" />
                         </div>
                         <div>
                            <label className="block text-xs font-bold text-slate-700 mb-1">Employee ID</label>
-                           <input type="text" value={entryEmpId} onChange={(e) => setEntryEmpId(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. EMP-2023-123" />
+                           <input type="text" value={entryEmpId} onChange={(e) => setEntryEmpId(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. EMP-2023-123" />
                         </div>
                         <div>
                            <label className="block text-xs font-bold text-slate-700 mb-1">Faculty</label>
-                           <input type="text" value={entryFaculty} onChange={(e) => setEntryFaculty(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. Arts" />
+                           <input type="text" value={entryFaculty} onChange={(e) => setEntryFaculty(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. Arts" />
                         </div>
                         <div>
                            <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
-                           <input type="text" value={entryDept} onChange={(e) => setEntryDept(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. Engineering" />
+                           <input type="text" value={entryDept} onChange={(e) => setEntryDept(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. Engineering" />
                         </div>
                         <div>
                            <label className="block text-xs font-bold text-slate-700 mb-1">Phone Number</label>
-                           <input type="text" value={entryPhone} onChange={(e) => setEntryPhone(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. +234 800 000 0000" />
+                           <input type="text" value={entryPhone} onChange={(e) => setEntryPhone(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. +234 800 000 0000" />
                         </div>
                         <div>
                            <label className="block text-xs font-bold text-slate-700 mb-1">Date of Birth</label>
-                           <input type="date" value={entryDob} onChange={(e) => setEntryDob(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" />
+                           <input type="date" value={entryDob} onChange={(e) => setEntryDob(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" />
                         </div>
                         <div>
                            <label className="block text-xs font-bold text-slate-700 mb-1">Height (cm)</label>
-                           <input type="text" value={entryHeight} onChange={(e) => setEntryHeight(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g. 175" />
+                           <input type="text" value={entryHeight} onChange={(e) => setEntryHeight(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none" placeholder="e.g. 175" />
                         </div>
                         <div>
                            <label className="block text-xs font-bold text-slate-700 mb-1">Blood Group</label>
-                           <select value={entryBloodGroup} onChange={(e) => setEntryBloodGroup(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none">
+                           <select value={entryBloodGroup} onChange={(e) => setEntryBloodGroup(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none">
                               <option value="">Select...</option>
                               <option value="A+">A+</option>
                               <option value="A-">A-</option>
@@ -895,7 +977,7 @@ export default function App() {
                       </div>
                       <div>
                          <label className="block text-xs font-bold text-slate-700 mb-1">Address</label>
-                         <textarea value={entryAddress} onChange={(e) => setEntryAddress(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-blue-500 outline-none resize-none h-20" placeholder="Full residential address" />
+                         <textarea value={entryAddress} onChange={(e) => setEntryAddress(e.target.value)} className="w-full px-3 py-2 bg-white/50 border border-white/60 backdrop-blur-sm shadow-inner rounded-md text-xs focus:ring-1 focus:ring-indigo-400 focus:bg-white/80 transition-all outline-none resize-none h-20" placeholder="Full residential address" />
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                          <div>
@@ -908,15 +990,24 @@ export default function App() {
                          </div>
                       </div>
 
-                      <button onClick={handleManualEntry} disabled={!entryName.trim() || !entryEmpId.trim() || !entryDept.trim() || !entryFaculty.trim()} className="bg-blue-600 text-white px-4 py-2 rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50">Submit My Details</button>
+                      <button onClick={handleManualEntry} disabled={!entryName.trim() || !entryEmpId.trim() || !entryDept.trim() || !entryFaculty.trim()} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all px-4 py-2 rounded-md text-xs font-bold hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50">Submit My Details</button>
                    </div>
                 )}
              </div>
-          </div>
+            </div>
+          </motion.div>
         )}
 
         {activeView === 'news' && (
-          <div className="flex-1 p-0 overflow-auto relative">
+          <motion.div
+            key="news"
+            initial={{ opacity: 0, y: 15, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -15, filter: 'blur(8px)' }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="flex-1 flex flex-col min-h-0 overflow-hidden"
+          >
+            <div className="flex-1 p-0 overflow-auto relative">
               {/* Immersive background layer */}
               <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-slate-800 to-black z-0 pointer-events-none">
                  <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1541339907198-e08756dedf3f?q=80&w=2070&auto=format&fit=crop')] opacity-10 bg-cover bg-center mix-blend-overlay"></div>
@@ -926,7 +1017,7 @@ export default function App() {
                   
                   <div className="flex items-center justify-between mb-12">
                      <div>
-                        <h2 className="text-4xl font-serif text-white mb-2 tracking-tight">University Announcements</h2>
+                        <h2 className="text-4xl font-display text-white mb-2 tracking-tight">University Announcements</h2>
                         <p className="text-indigo-200 text-sm font-light">Stay inspired. Stay informed.</p>
                      </div>
                      <button 
@@ -955,7 +1046,7 @@ export default function App() {
                         />
                         <textarea 
                           placeholder="Craft an inspiring message..." 
-                          className="w-full px-4 py-3 bg-black/20 border border-white/10 rounded-xl text-sm text-white placeholder-white/40 focus:ring-1 focus:ring-white/30 outline-none h-32 resize-none transition-all font-serif"
+                          className="w-full px-4 py-3 bg-black/20 border border-white/10 rounded-xl text-sm text-white placeholder-white/40 focus:ring-1 focus:ring-white/30 outline-none h-32 resize-none transition-all font-display"
                           value={newsContent}
                           onChange={(e) => setNewsContent(e.target.value)}
                         />
@@ -963,7 +1054,7 @@ export default function App() {
                           <button 
                             onClick={handleAddNews}
                             disabled={!newsTitle.trim() || !newsContent.trim()}
-                            className="bg-white text-slate-900 px-6 py-2.5 rounded-full text-xs font-bold hover:bg-indigo-50 disabled:opacity-50 shadow-lg shadow-white/10 transition-all tracking-wide"
+                            className="bg-gradient-to-r from-white to-indigo-50 text-indigo-900 px-6 py-3 rounded-full text-xs font-bold hover:scale-105 disabled:opacity-50 shadow-[0_4px_12px_rgba(255,255,255,0.3)] transition-all tracking-wide"
                           >
                             {editingNewsId ? 'Update Globally' : 'Publish Globally'}
                           </button>
@@ -973,7 +1064,7 @@ export default function App() {
                   )}
 
                   {newsList.length === 0 ? (
-                    <div className="text-center text-white/50 text-sm font-serif italic py-12">The canvas is clear. Waiting for a spark of inspiration.</div>
+                    <div className="text-center text-white/50 text-sm font-display italic py-12">The canvas is clear. Waiting for a spark of inspiration.</div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {newsList.map(news => (
@@ -992,7 +1083,7 @@ export default function App() {
                                  </div>
                                )}
                              </div>
-                             <h3 className="text-xl font-serif text-white mb-3 leading-snug group-hover:text-indigo-200 transition-colors">{news.title}</h3>
+                             <h3 className="text-xl font-display text-white mb-3 leading-snug group-hover:text-indigo-200 transition-all duration-300">{news.title}</h3>
                              <p className="text-sm text-white/70 whitespace-pre-wrap leading-relaxed font-light">{news.content}</p>
                              <div className="mt-6 pt-4 border-t border-white/10 flex justify-between items-center">
                                <span className="text-[10px] text-white/40 uppercase tracking-widest">Authored by</span>
@@ -1003,8 +1094,11 @@ export default function App() {
                     </div>
                   )}
               </div>
-          </div>
+            </div>
+          </motion.div>
         )}
+
+        </AnimatePresence>
       </main>
     </div>
   );
