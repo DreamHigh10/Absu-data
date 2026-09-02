@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Database, LayoutDashboard, Users, Rss, MessageSquare, Settings, Search, Download, CheckCircle, Clock, Check, ChevronRight, LogIn, UserPlus, Upload, Volume2, VolumeX, Image as ImageIcon, X, User as UserIcon } from 'lucide-react';
 import { auth, db } from './firebase';
-import { onAuthStateChanged, User, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail } from 'firebase/auth';
 import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -30,6 +33,7 @@ export default function App() {
   const [authName, setAuthName] = useState('');
   const [authPhone, setAuthPhone] = useState('');
   const [authError, setAuthError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Registration / Entry form states
   const [entryName, setEntryName] = useState('');
@@ -95,7 +99,20 @@ export default function App() {
     }
   }, [activeView, isAudioMuted]);
 
-  const isAdmin = user?.email?.toLowerCase() === 'brossj50@gmail.com' || staffList.some(s => s.email === user?.email && s.role === 'admin');
+  const isAdmin = user?.email?.toLowerCase() === 'brossj50@gmail.com' || user?.email?.toLowerCase() === 'ogungbadekehinde19@gmail.com' || staffList.some(s => s.email === user?.email && s.role === 'admin');
+
+    const handlePasswordReset = async () => {
+    if (!authEmail.trim()) {
+      setAuthError('Please enter your email to reset password.');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, authEmail);
+      setAuthError('Password reset email sent! Check your inbox.');
+    } catch(err: any) {
+      setAuthError(err.message || 'Failed to send reset email.');
+    }
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,6 +217,56 @@ export default function App() {
     }
   };
 
+    const isSuperAdmin = user?.email === 'ogungbadekehinde19@gmail.com';
+
+  const handleRemoveAdmin = async (staffId: string) => {
+    try {
+      await updateDoc(doc(db, 'staff', staffId), { role: 'user' });
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    doc.text("ABSU Staff Database", 14, 15);
+    const tableData = filteredStaffList.map(s => [s.name, s.employeeId, s.department, s.role || 'Staff', s.phone || 'N/A']);
+    autoTable(doc, {
+      head: [['Name', 'Employee ID', 'Department', 'Role', 'Phone']],
+      body: tableData,
+      startY: 20
+    });
+    doc.save('absu_staff_directory.pdf');
+  };
+
+  const handleExportExcel = () => {
+    const wsData = filteredStaffList.map(s => ({
+      Name: s.name,
+      'Employee ID': s.employeeId,
+      Department: s.department,
+      Faculty: s.faculty,
+      Role: s.role || 'Staff',
+      Phone: s.phone,
+      'Blood Group': s.bloodGroup,
+      Status: s.status
+    }));
+    const ws = XLSX.utils.json_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Staff");
+    XLSX.writeFile(wb, "absu_staff_directory.xlsx");
+  };
+
+  const filteredStaffList = staffList.filter(staff => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      staff.name?.toLowerCase().includes(q) ||
+      staff.employeeId?.toLowerCase().includes(q) ||
+      staff.department?.toLowerCase().includes(q) ||
+      staff.faculty?.toLowerCase().includes(q)
+    );
+  });
+
   const handleMakeAdmin = async (staffId: string) => {
     try {
       await updateDoc(doc(db, 'staff', staffId), {
@@ -258,12 +325,48 @@ export default function App() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string>>) => {
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string>>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    // For PDFs/Docs, don't try to resize
+    if (!file.type.startsWith('image/')) {
+       const reader = new FileReader();
+       reader.onload = (event) => setter(event.target?.result as string);
+       reader.readAsDataURL(file);
+       return;
+    }
+
+    // For images, resize to prevent exceeding 1MB
     const reader = new FileReader();
     reader.onload = (event) => {
-      setter(event.target?.result as string);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        setter(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
   };
@@ -370,6 +473,12 @@ export default function App() {
               onChange={(e) => setAuthPassword(e.target.value)}
               className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
             />
+            {authMode === 'signin' && (
+              <button type="button" onClick={handlePasswordReset} className="text-[10px] text-indigo-600 hover:underline self-end">
+                Forgot Password?
+              </button>
+            )}
+
             <button 
               type="submit"
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 text-sm mt-2"
@@ -500,13 +609,20 @@ export default function App() {
           </h1>
           <div className="flex items-center gap-4">
             <div className="relative">
-              <input type="text" placeholder="Search records..." className="pl-9 pr-4 py-2 bg-white/50 backdrop-blur-sm border border-white/40 rounded-full text-xs w-72 focus:ring-2 focus:ring-indigo-400 focus:bg-white/80 outline-none shadow-inner transition-all" />
+              <input type="text" placeholder="Search records..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 pr-4 py-2 bg-white/50 backdrop-blur-sm border border-white/40 rounded-full text-xs w-72 focus:ring-2 focus:ring-indigo-400 focus:bg-white/80 outline-none shadow-inner transition-all" />
               <Search className="w-4 h-4 absolute left-3 top-2 text-indigo-400" />
             </div>
             {isAdmin && (
-              <button className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white shadow-[0_8px_16px_rgba(147,51,234,0.3)] hover:shadow-[0_12px_24px_rgba(147,51,234,0.4)] hover:-translate-y-0.5 text-white text-xs font-bold py-1.5 px-4 rounded shadow-sm transition-all duration-300 flex items-center gap-1.5">
-                <Download className="w-3.5 h-3.5" /> Export Report
-              </button>
+              
+              <div className="flex gap-2">
+                <button onClick={handleExportPDF} className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-[0_4px_12px_rgba(225,29,72,0.3)] hover:-translate-y-0.5 text-xs font-bold py-1.5 px-3 rounded-full transition-all duration-300 flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5" /> PDF
+                </button>
+                <button onClick={handleExportExcel} className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-[0_4px_12px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 text-xs font-bold py-1.5 px-3 rounded-full transition-all duration-300 flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5" /> Excel
+                </button>
+              </div>
+
             )}
           </div>
         </header>
@@ -529,7 +645,7 @@ export default function App() {
               <div className="glass-panel p-6 rounded-3xl">
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Staff (DB)</div>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-black text-slate-900">{staffList.length}</span>
+                  <span className="text-2xl font-black text-slate-900">{filteredStaffList.length}</span>
                   <span className="text-emerald-500 text-xs font-bold">+Live</span>
                 </div>
                 <div className="mt-3 h-1 w-full bg-white/40 rounded-full overflow-hidden shadow-inner">
@@ -620,10 +736,10 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {staffList.length === 0 ? (
+                    {filteredStaffList.length === 0 ? (
                        <tr><td colSpan={6} className="px-5 py-4 text-center text-xs text-slate-500">No live data yet. Staff registered through the mobile app will appear here.</td></tr>
                     ) : (
-                      staffList.slice(0, 5).map((staff) => (
+                      filteredStaffList.slice(0, 5).map((staff) => (
                       <tr key={staff.id} className="text-xs hover:bg-white/40 transition-colors">
                         <td className="px-5 py-2.5 flex items-center gap-3">
                           <div className={`w-7 h-7 rounded ${staff.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'} flex items-center justify-center font-bold text-[10px]`}>
@@ -646,8 +762,11 @@ export default function App() {
                           {staff.createdAt?.toDate ? staff.createdAt.toDate().toLocaleDateString() : 'Just now'}
                         </td>
                         <td className="px-5 py-2.5 text-right whitespace-nowrap">
-                          {isAdmin && staff.role !== 'admin' && (
+                          {isSuperAdmin && staff.role !== "admin" && (
                             <button onClick={() => handleMakeAdmin(staff.id)} className="text-emerald-600 hover:text-emerald-800 font-bold px-2 py-1 mr-2 border border-emerald-200 rounded text-[10px]">Make Admin</button>
+                          )}
+                          {isSuperAdmin && staff.role === "admin" && staff.email !== user?.email && (
+                            <button onClick={() => handleRemoveAdmin(staff.id)} className="text-amber-600 hover:text-amber-800 font-bold px-2 py-1 mr-2 border border-amber-200 rounded text-[10px]">Remove Admin</button>
                           )}
                           <button onClick={() => setReviewStaff(staff)} className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
                           {isAdmin && (
@@ -692,10 +811,10 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {staffList.length === 0 ? (
+                      {filteredStaffList.length === 0 ? (
                          <tr><td colSpan={6} className="px-5 py-4 text-center text-xs text-slate-500">No live data yet. Staff registered through the mobile app will appear here.</td></tr>
                       ) : (
-                        staffList.map((staff) => (
+                        filteredStaffList.map((staff) => (
                         <tr key={staff.id} className="text-xs hover:bg-white/40 transition-colors">
                           <td className="px-5 py-2.5 flex items-center gap-3">
                             <div className={`w-7 h-7 rounded ${staff.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'} flex items-center justify-center font-bold text-[10px]`}>
@@ -718,10 +837,13 @@ export default function App() {
                             {staff.createdAt?.toDate ? staff.createdAt.toDate().toLocaleDateString() : 'Just now'}
                           </td>
                           <td className="px-5 py-2.5 text-right whitespace-nowrap">
-                            {isAdmin && staff.role !== 'admin' && (
+                            {isSuperAdmin && staff.role !== "admin" && (
                               <button onClick={() => handleMakeAdmin(staff.id)} className="text-emerald-600 hover:text-emerald-800 font-bold px-2 py-1 mr-2 border border-emerald-200 rounded text-[10px]">Make Admin</button>
                             )}
-                            <button onClick={() => setReviewStaff(staff)} className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
+                            {isSuperAdmin && staff.role === "admin" && staff.email !== user?.email && (
+                            <button onClick={() => handleRemoveAdmin(staff.id)} className="text-amber-600 hover:text-amber-800 font-bold px-2 py-1 mr-2 border border-amber-200 rounded text-[10px]">Remove Admin</button>
+                          )}
+                          <button onClick={() => setReviewStaff(staff)} className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
                             {isAdmin && (
                               <button onClick={() => handleDeleteStaff(staff.id)} className="text-red-500 hover:text-red-700 font-bold px-2 py-1 ml-1 text-[10px] border border-red-200 rounded uppercase tracking-wider">Delete</button>
                             )}
