@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Database, LayoutDashboard, Users, Rss, MessageSquare, Settings, Search, Download, CheckCircle, Clock, Check, ChevronRight, LogIn, UserPlus, Upload, Volume2, VolumeX, Image as ImageIcon } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Rss, MessageSquare, Settings, Search, Download, CheckCircle, Clock, Check, ChevronRight, LogIn, UserPlus, Upload, Volume2, VolumeX, Image as ImageIcon, X, User as UserIcon } from 'lucide-react';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, User, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
@@ -44,6 +44,7 @@ export default function App() {
   const [entryStaffType, setEntryStaffType] = useState('Academic');
   const [entryPhoto, setEntryPhoto] = useState('');
   const [entryCv, setEntryCv] = useState('');
+  const [reviewStaff, setReviewStaff] = useState<any | null>(null);
 
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -206,6 +207,16 @@ export default function App() {
       });
     } catch(err) {
       console.error(err);
+    }
+  };
+
+  const handleDeleteStaff = async (staffId: string) => {
+    if (!window.confirm("Are you sure you want to delete this staff record?")) return;
+    try {
+      await deleteDoc(doc(db, 'staff', staffId));
+    } catch(err) {
+      console.error("Error deleting staff:", err);
+      alert("Failed to delete staff record.");
     }
   };
 
@@ -638,7 +649,10 @@ export default function App() {
                           {isAdmin && staff.role !== 'admin' && (
                             <button onClick={() => handleMakeAdmin(staff.id)} className="text-emerald-600 hover:text-emerald-800 font-bold px-2 py-1 mr-2 border border-emerald-200 rounded text-[10px]">Make Admin</button>
                           )}
-                          <button className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
+                          <button onClick={() => setReviewStaff(staff)} className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
+                          {isAdmin && (
+                            <button onClick={() => handleDeleteStaff(staff.id)} className="text-red-500 hover:text-red-700 font-bold px-2 py-1 ml-1 text-[10px] border border-red-200 rounded uppercase tracking-wider">Delete</button>
+                          )}
                         </td>
                       </tr>
                       ))
@@ -707,7 +721,10 @@ export default function App() {
                             {isAdmin && staff.role !== 'admin' && (
                               <button onClick={() => handleMakeAdmin(staff.id)} className="text-emerald-600 hover:text-emerald-800 font-bold px-2 py-1 mr-2 border border-emerald-200 rounded text-[10px]">Make Admin</button>
                             )}
-                            <button className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
+                            <button onClick={() => setReviewStaff(staff)} className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
+                            {isAdmin && (
+                              <button onClick={() => handleDeleteStaff(staff.id)} className="text-red-500 hover:text-red-700 font-bold px-2 py-1 ml-1 text-[10px] border border-red-200 rounded uppercase tracking-wider">Delete</button>
+                            )}
                           </td>
                         </tr>
                         ))
@@ -1099,6 +1116,112 @@ export default function App() {
         )}
 
         </AnimatePresence>
+      
+        {/* Review Staff Modal */}
+        <AnimatePresence>
+          {reviewStaff && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+              onClick={() => setReviewStaff(null)}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                onClick={(e) => e.stopPropagation()}
+                className="glass-panel w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+              >
+                <div className="bg-white/40 p-6 border-b border-white/50 flex justify-between items-center shrink-0">
+                  <h3 className="text-xl font-display font-bold text-slate-800">Staff Profile Details</h3>
+                  <button onClick={() => setReviewStaff(null)} className="p-2 bg-white/50 hover:bg-white rounded-full text-slate-500 hover:text-slate-800 transition-colors">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="p-6 overflow-y-auto custom-scrollbar">
+                  <div className="flex flex-col md:flex-row gap-8">
+                    {/* Photo section */}
+                    <div className="flex flex-col items-center shrink-0">
+                      <div className="w-32 h-32 rounded-2xl overflow-hidden shadow-lg border-2 border-white bg-white/50 flex items-center justify-center relative">
+                        {reviewStaff.photoUrl ? (
+                          <img src={reviewStaff.photoUrl} alt={reviewStaff.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center text-indigo-300">
+                            <UserIcon className="w-12 h-12 mb-2" />
+                            <span className="text-[10px] font-bold uppercase">No Photo</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-4 text-center">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold shadow-sm ${
+                          reviewStaff.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
+                          reviewStaff.status === 'Draft' ? 'bg-white/50 text-slate-600' :
+                          'bg-amber-100 text-amber-700'
+                        }`}>
+                          {reviewStaff.status}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Details section */}
+                    <div className="flex-1 space-y-6">
+                      <div>
+                        <h2 className="text-2xl font-bold text-slate-900">{reviewStaff.name}</h2>
+                        <p className="text-indigo-600 font-mono text-sm mt-1">{reviewStaff.employeeId}</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="bg-white/40 p-3 rounded-xl border border-white/50">
+                          <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Department</p>
+                          <p className="text-sm font-medium text-slate-800">{reviewStaff.department || 'N/A'}</p>
+                        </div>
+                        <div className="bg-white/40 p-3 rounded-xl border border-white/50">
+                          <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Faculty</p>
+                          <p className="text-sm font-medium text-slate-800">{reviewStaff.faculty || 'N/A'}</p>
+                        </div>
+                        <div className="bg-white/40 p-3 rounded-xl border border-white/50">
+                          <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Role / Type</p>
+                          <p className="text-sm font-medium text-slate-800">{reviewStaff.role} &bull; {reviewStaff.staffType || 'Staff'}</p>
+                        </div>
+                        <div className="bg-white/40 p-3 rounded-xl border border-white/50">
+                          <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Contact Phone</p>
+                          <p className="text-sm font-medium text-slate-800">{reviewStaff.phone || 'N/A'}</p>
+                        </div>
+                        <div className="bg-white/40 p-3 rounded-xl border border-white/50">
+                          <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Date of Birth</p>
+                          <p className="text-sm font-medium text-slate-800">{reviewStaff.dob || 'N/A'}</p>
+                        </div>
+                        <div className="bg-white/40 p-3 rounded-xl border border-white/50">
+                          <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Blood Group</p>
+                          <p className="text-sm font-medium text-slate-800">{reviewStaff.bloodGroup || 'N/A'}</p>
+                        </div>
+                      </div>
+                      
+                      {reviewStaff.address && (
+                        <div className="bg-white/40 p-4 rounded-xl border border-white/50">
+                          <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Residential Address</p>
+                          <p className="text-sm text-slate-700 leading-relaxed">{reviewStaff.address}</p>
+                        </div>
+                      )}
+                      
+                      {reviewStaff.cvUrl && (
+                        <div className="pt-4 border-t border-white/40">
+                          <a href={reviewStaff.cvUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-xs font-bold py-2.5 px-6 rounded-full shadow-md hover:shadow-lg transition-all hover:-translate-y-0.5">
+                            <Download className="w-4 h-4" /> Download CV Document
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       </main>
     </div>
   );
