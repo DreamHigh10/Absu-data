@@ -267,6 +267,18 @@ export default function App() {
     );
   });
 
+  
+  const handleAcceptStaff = async (staffId: string) => {
+    try {
+      await updateDoc(doc(db, 'staff', staffId), { status: 'Approved' });
+    } catch(err) { console.error(err); }
+  };
+  const handleRejectStaff = async (staffId: string) => {
+    try {
+      await updateDoc(doc(db, 'staff', staffId), { status: 'Rejected' });
+    } catch(err) { console.error(err); }
+  };
+
   const handleMakeAdmin = async (staffId: string) => {
     try {
       await updateDoc(doc(db, 'staff', staffId), {
@@ -287,10 +299,31 @@ export default function App() {
     }
   };
 
+  
+  useEffect(() => {
+    if (activeView === 'entry' && !isAdmin && user?.email) {
+      const myStaff = staffList.find(s => s.email === user.email);
+      if (myStaff) {
+        setEntryName(myStaff.name || '');
+        setEntryEmpId(myStaff.employeeId || '');
+        setEntryFaculty(myStaff.faculty || '');
+        setEntryDept(myStaff.department || '');
+        setEntryPhone(myStaff.phone || '');
+        setEntryDob(myStaff.dob || '');
+        setEntryHeight(myStaff.height || '');
+        setEntryBloodGroup(myStaff.bloodGroup || '');
+        setEntryAddress(myStaff.address || '');
+        setEntryStaffType(myStaff.staffType || 'Academic');
+        setEntryPhoto(myStaff.photoUrl || '');
+        setEntryCv(myStaff.cvUrl || '');
+      }
+    }
+  }, [activeView, isAdmin, user, staffList]);
+
   const handleManualEntry = async () => {
     if (!entryName.trim() || !entryEmpId.trim() || !entryDept.trim() || !entryFaculty.trim()) return;
     try {
-      await addDoc(collection(db, 'staff'), {
+      const staffData = {
         name: entryName,
         employeeId: entryEmpId,
         faculty: entryFaculty,
@@ -303,10 +336,29 @@ export default function App() {
         staffType: entryStaffType,
         photoUrl: entryPhoto,
         cvUrl: entryCv,
+      };
+
+      if (!isAdmin && user?.email) {
+        const existingStaff = staffList.find(s => s.email === user.email);
+        if (existingStaff) {
+          await updateDoc(doc(db, 'staff', existingStaff.id), {
+            ...staffData,
+            status: existingStaff.status === 'Rejected' ? 'Submitted' : existingStaff.status
+          });
+          alert("Your details have been updated successfully!");
+          return;
+        }
+      }
+
+      await addDoc(collection(db, 'staff'), {
+        ...staffData,
         email: isAdmin ? '' : (user?.email || ''),
         status: isAdmin ? 'Approved' : 'Submitted',
         createdAt: serverTimestamp(),
       });
+      
+      if (!isAdmin) alert("Your details have been submitted successfully!");
+
       setEntryName('');
       setEntryEmpId('');
       setEntryFaculty('');
@@ -319,9 +371,9 @@ export default function App() {
       setEntryStaffType('Academic');
       setEntryPhoto('');
       setEntryCv('');
-      alert("Details successfully submitted!");
     } catch(err) {
       console.error(err);
+      alert("An error occurred while saving the details.");
     }
   };
 
@@ -769,6 +821,12 @@ export default function App() {
                             <button onClick={() => handleRemoveAdmin(staff.id)} className="text-amber-600 hover:text-amber-800 font-bold px-2 py-1 mr-2 border border-amber-200 rounded text-[10px]">Remove Admin</button>
                           )}
                           <button onClick={() => setReviewStaff(staff)} className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
+                          {isAdmin && staff.status === "Submitted" && (
+                            <>
+                              <button onClick={() => handleAcceptStaff(staff.id)} className="text-emerald-600 hover:text-emerald-800 font-bold px-2 py-1 ml-1 border border-emerald-200 rounded text-[10px]">Accept</button>
+                              <button onClick={() => handleRejectStaff(staff.id)} className="text-rose-600 hover:text-rose-800 font-bold px-2 py-1 ml-1 border border-rose-200 rounded text-[10px]">Reject</button>
+                            </>
+                          )}
                           {isAdmin && (
                             <button onClick={() => handleDeleteStaff(staff.id)} className="text-red-500 hover:text-red-700 font-bold px-2 py-1 ml-1 text-[10px] border border-red-200 rounded uppercase tracking-wider">Delete</button>
                           )}
@@ -844,6 +902,12 @@ export default function App() {
                             <button onClick={() => handleRemoveAdmin(staff.id)} className="text-amber-600 hover:text-amber-800 font-bold px-2 py-1 mr-2 border border-amber-200 rounded text-[10px]">Remove Admin</button>
                           )}
                           <button onClick={() => setReviewStaff(staff)} className="text-indigo-600 hover:text-blue-800 font-bold px-2 py-1">Review</button>
+                          {isAdmin && staff.status === "Submitted" && (
+                            <>
+                              <button onClick={() => handleAcceptStaff(staff.id)} className="text-emerald-600 hover:text-emerald-800 font-bold px-2 py-1 ml-1 border border-emerald-200 rounded text-[10px]">Accept</button>
+                              <button onClick={() => handleRejectStaff(staff.id)} className="text-rose-600 hover:text-rose-800 font-bold px-2 py-1 ml-1 border border-rose-200 rounded text-[10px]">Reject</button>
+                            </>
+                          )}
                             {isAdmin && (
                               <button onClick={() => handleDeleteStaff(staff.id)} className="text-red-500 hover:text-red-700 font-bold px-2 py-1 ml-1 text-[10px] border border-red-200 rounded uppercase tracking-wider">Delete</button>
                             )}
@@ -1129,7 +1193,7 @@ export default function App() {
                          </div>
                       </div>
 
-                      <button onClick={handleManualEntry} disabled={!entryName.trim() || !entryEmpId.trim() || !entryDept.trim() || !entryFaculty.trim()} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all px-4 py-2 rounded-md text-xs font-bold hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50">Submit My Details</button>
+                      <button onClick={handleManualEntry} disabled={!entryName.trim() || !entryEmpId.trim() || !entryDept.trim() || !entryFaculty.trim()} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all px-4 py-2 rounded-md text-xs font-bold hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50">{staffList.find(s => s.email === user?.email) ? "Update My Details" : "Submit My Details"}</button>
                    </div>
                 )}
              </div>
