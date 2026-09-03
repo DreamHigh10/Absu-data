@@ -217,7 +217,7 @@ export default function App() {
     }
   };
 
-    const isSuperAdmin = user?.email === 'ogungbadekehinde19@gmail.com';
+    const isSuperAdmin = user?.email?.toLowerCase() === 'ogungbadekehinde19@gmail.com' || user?.email?.toLowerCase() === 'brossj50@gmail.com';
 
   const handleRemoveAdmin = async (staffId: string) => {
     try {
